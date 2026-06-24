@@ -725,13 +725,82 @@ function saveProject(){
     descricao:document.getElementById('fDesc').value.trim(),
   };
   if(p.status==='excluir'){
-    if(editingIndex!==null){ projects.splice(editingIndex,1); persist(); render(); closeModal(); showToast('🗑️ Atividade excluída'); }
+    if(editingIndex!==null){ projects.splice(editingIndex,1); persist(); render(); closeModal(); showToast('🗑️ Atividade excluída'); pushToGitHub(); }
     else { showToast('Selecione uma atividade para excluir',true); }
     return;
   }
-  if(editingIndex!==null){ projects[editingIndex]=p; } else { p._local=true; projects.push(p); }
+  if(editingIndex!==null){ projects[editingIndex]=p; } else { projects.push(p); }
   persist(); render(); closeModal();
   showToast(editingIndex!==null?'Atividade atualizada':'Atividade adicionada');
+  pushToGitHub();
+}
+
+function arrayToCSV(arr) {
+  const headers = ['nome', 'cliente', 'responsavel', 'inicio', 'prazo', 'status', 'progresso', 'descricao'];
+  let csv = headers.join(',') + '\n';
+  arr.forEach(p => {
+    let row = headers.map(h => {
+      let val = String(p[h] || '').replace(/"/g, '""');
+      return `"${val}"`;
+    });
+    csv += row.join(',') + '\n';
+  });
+  return csv;
+}
+
+async function pushToGitHub() {
+  let token = localStorage.getItem('github_pat');
+  if (!token) {
+    token = prompt("🔒 O seu celular não tem acesso ao PC.\nPara a edição aparecer no seu computador, insira o seu Token do GitHub (PAT):");
+    if (!token) return;
+    localStorage.setItem('github_pat', token);
+  }
+
+  showToast("⏳ Salvando na nuvem do GitHub...", false);
+  const owner = 'planejamentogruposantana-creator';
+  const repo = 'agenda-santana-xyz99';
+  const path = 'agenda_projetos.csv';
+  const branch = 'gh-pages';
+  const csvContent = arrayToCSV(projects);
+
+  try {
+    const getRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/contents/${path}?ref=${branch}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+    });
+    let sha = '';
+    if (getRes.ok) {
+        const getJson = await getRes.json();
+        sha = getJson.sha;
+    }
+
+    const encodedContent = btoa(unescape(encodeURIComponent(csvContent)));
+    const putRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/contents/${path}`, {
+        method: 'PUT',
+        headers: { 
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            message: "Auto-sync Celular (GitHub API)",
+            content: encodedContent,
+            sha: sha,
+            branch: branch
+        })
+    });
+
+    if (putRes.ok) {
+        showToast("✅ Salvo na nuvem com sucesso!");
+    } else {
+        if(putRes.status === 401) {
+            localStorage.removeItem('github_pat');
+            showToast("Erro: Token Inválido.", true);
+        } else {
+            showToast("Erro ao salvar no GitHub: " + putRes.status, true);
+        }
+    }
+  } catch(e) {
+    showToast("Erro de conexão com o GitHub.", true);
+  }
 }
 
 // ── Toast ─────────────────────────────────────────────────────────────────────
