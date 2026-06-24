@@ -1,0 +1,802 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Projetos – Calendário Visual</title>
+  <style>
+    :root {
+      --bg: #0f1117;
+      --surface: #1a1d27;
+      --surface2: #20243a;
+      --border: #2a2d3e;
+      --text: #e2e8f0;
+      --muted: #64748b;
+      --accent: #6366f1;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: var(--bg); color: var(--text); font-family: 'Inter', system-ui, sans-serif; min-height: 100vh; }
+
+    header {
+      padding: 18px 28px;
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap;
+    }
+    header h1 { font-size: 1.2rem; font-weight: 700; }
+    header h1 span { color: var(--accent); }
+
+    .controls { display: flex; gap: 8px; flex-wrap: wrap; }
+    .btn { padding: 7px 15px; border-radius: 8px; border: none; cursor: pointer; font-size: 0.82rem; font-weight: 600; transition: opacity .15s; }
+    .btn:hover { opacity: 0.82; }
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-ghost { background: var(--border); color: var(--text); }
+
+    .sheet-config {
+      background: var(--surface); border-bottom: 1px solid var(--border);
+      padding: 10px 28px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    }
+    .sheet-config label { font-size: 0.78rem; color: var(--muted); white-space: nowrap; }
+    .sheet-config input {
+      flex: 1; min-width: 260px; padding: 6px 11px; border-radius: 7px;
+      border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 0.82rem;
+    }
+    .sheet-config input:focus { outline: 2px solid var(--accent); border-color: transparent; }
+
+    .legend {
+      padding: 8px 28px; display: flex; gap: 14px; align-items: center;
+      border-bottom: 1px solid var(--border); flex-wrap: wrap;
+    }
+    .legend-item { display: flex; align-items: center; gap: 5px; font-size: 0.75rem; color: var(--muted); }
+    .legend-dot { width: 11px; height: 11px; border-radius: 3px; }
+
+    .stats { padding: 14px 28px; display: flex; gap: 12px; flex-wrap: wrap; }
+    .stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 10px 18px; min-width: 110px; }
+    .stat-card .val { font-size: 1.5rem; font-weight: 700; }
+    .stat-card .lbl { font-size: 0.72rem; color: var(--muted); margin-top: 1px; }
+
+    .filters { padding: 10px 28px; display: flex; gap: 7px; flex-wrap: wrap; }
+    .filter-btn { padding: 4px 13px; border-radius: 20px; border: 1px solid var(--border); background: transparent; color: var(--muted); font-size: 0.78rem; cursor: pointer; transition: all .15s; }
+    .filter-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+    .filter-btn:hover:not(.active) { border-color: var(--accent); color: var(--text); }
+
+    /* ── Gantt ── */
+    .gantt-wrap { padding: 0 28px 40px; overflow-x: auto; }
+    .gantt-container { min-width: 1000px; }
+
+    /* Week header */
+    .week-header-row {
+      display: grid;
+      margin-bottom: 2px;
+    }
+    .week-cells { display: flex; }
+    .week-cell {
+      font-size: 0.68rem; color: var(--muted); text-align: center;
+      border-left: 1px solid var(--border); padding: 3px 0;
+      white-space: nowrap; overflow: hidden;
+    }
+    .week-cell.current-week { color: #f59e0b; border-left-color: #f59e0b; font-weight: 700; }
+
+    /* Month super-header */
+    .month-header-row { display: grid; margin-bottom: 0; }
+    .month-cells { display: flex; }
+    .month-cell {
+      font-size: 0.72rem; color: #94a3b8; font-weight: 600; text-align: center;
+      border-left: 1px solid var(--border); padding: 4px 0; background: var(--surface);
+      white-space: nowrap; overflow: hidden;
+    }
+
+    /* Project row */
+    .project-row {
+      background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+      margin-bottom: 7px; overflow: hidden; transition: border-color .2s;
+    }
+    .project-row.done { opacity: 0.5; }
+    .project-row-header {
+      display: grid; align-items: center; cursor: pointer;
+    }
+    .project-row-header:hover { background: rgba(99,102,241,0.06); }
+
+    .col-info { padding: 9px 13px; border-right: 1px solid var(--border); }
+    .proj-name { font-weight: 600; font-size: 0.88rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .proj-client { font-size: 0.72rem; color: var(--accent); margin-top: 1px; font-weight: 600; }
+    .proj-meta { font-size: 0.7rem; color: var(--muted); margin-top: 3px; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+
+    .status-badge { display: inline-block; padding: 2px 7px; border-radius: 20px; font-size: 0.65rem; font-weight: 600; }
+
+    .col-bar { padding: 9px 8px; position: relative; height: 58px; }
+    .bar-track { position: relative; height: 100%; }
+    .bar-fill {
+      position: absolute; height: 20px; border-radius: 6px;
+      display: flex; align-items: center; padding: 0 6px;
+      overflow: hidden; min-width: 4px;
+      top: 50%; transform: translateY(-50%);
+    }
+    .bar-label { font-size: 0.62rem; font-weight: 700; color: rgba(255,255,255,0.9); white-space: nowrap; overflow: hidden; }
+
+    .progress-wrap { margin-top: 5px; display: flex; align-items: center; gap: 7px; }
+    .progress-track { flex: 1; height: 3px; background: rgba(255,255,255,0.08); border-radius: 2px; overflow: hidden; }
+    .progress-fill { height: 100%; border-radius: 2px; background: var(--accent); }
+    .progress-pct { font-size: 0.68rem; color: var(--muted); min-width: 28px; text-align: right; }
+
+    .today-line { position: absolute; top: -4px; bottom: -4px; width: 2px; background: #f59e0b; z-index: 10; pointer-events: none; }
+    .today-line::before {
+      content: 'hoje'; position: absolute; top: -17px; left: 50%;
+      transform: translateX(-50%); font-size: 0.58rem; color: #f59e0b; font-weight: 700; white-space: nowrap;
+    }
+
+    /* Description panel */
+    .desc-panel {
+      display: none;
+      border-top: 1px solid var(--border);
+      padding: 10px 13px 12px;
+      background: var(--surface2);
+      font-size: 0.8rem;
+      color: #94a3b8;
+      line-height: 1.55;
+    }
+    .desc-panel.open { display: block; }
+    .desc-panel .desc-label { font-size: 0.68rem; color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 4px; }
+    .desc-panel .desc-actions { margin-top: 8px; display: flex; gap: 8px; }
+
+    .expand-icon { font-size: 0.7rem; color: var(--muted); margin-left: auto; padding-right: 8px; transition: transform .2s; }
+    .expand-icon.open { transform: rotate(180deg); }
+
+    /* Modal */
+    .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.65); z-index: 100; align-items: center; justify-content: center; }
+    .modal-overlay.open { display: flex; }
+    .modal { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 26px; width: 100%; max-width: 500px; margin: 16px; max-height: 90vh; overflow-y: auto; }
+    .modal h2 { font-size: 1.05rem; font-weight: 700; margin-bottom: 18px; }
+    .form-row { margin-bottom: 13px; }
+    .form-row label { display: block; font-size: 0.76rem; color: var(--muted); margin-bottom: 4px; }
+    .form-row input, .form-row select, .form-row textarea {
+      width: 100%; padding: 8px 11px; border-radius: 8px;
+      border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 0.83rem;
+      font-family: inherit;
+    }
+    .form-row textarea { resize: vertical; min-height: 72px; line-height: 1.5; }
+    .form-row input:focus, .form-row select:focus, .form-row textarea:focus { outline: 2px solid var(--accent); border-color: transparent; }
+    .form-row input[type=range] { padding: 0; }
+    .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 13px; }
+    .form-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 18px; }
+
+    .empty-state { text-align: center; padding: 60px 20px; color: var(--muted); }
+    .empty-state .icon { font-size: 2.8rem; margin-bottom: 10px; }
+    .empty-state p { font-size: 0.88rem; }
+    .loading { text-align: center; padding: 40px; color: var(--muted); font-size: 0.88rem; }
+
+    .toast { position: fixed; bottom: 22px; right: 22px; background: #10b981; color: #fff; padding: 9px 18px; border-radius: 9px; font-size: 0.83rem; font-weight: 600; transform: translateY(80px); transition: transform .3s; z-index: 200; }
+    .toast.show { transform: translateY(0); }
+    .toast.error { background: #ef4444; }
+
+    .days-col { display: flex; align-items: center; justify-content: flex-end; padding: 0 8px; }
+    .days-val { font-size: 0.7rem; font-weight: 700; }
+
+    /* ── Alert Panel ── */
+    .alert-panel {
+      margin: 0 28px 4px;
+      border-radius: 12px;
+      overflow: hidden;
+      border: 1px solid #f97316;
+    }
+    .alert-panel.hidden { display: none; }
+    .alert-header {
+      background: linear-gradient(90deg,#7c2d12,#1a1d27);
+      padding: 9px 16px;
+      display: flex; align-items: center; justify-content: space-between;
+      cursor: pointer; user-select: none;
+    }
+    .alert-header-left { display: flex; align-items: center; gap: 8px; font-size: 0.83rem; font-weight: 700; color: #fed7aa; }
+    .alert-header-right { font-size: 0.72rem; color: #fb923c; }
+    .alert-body { background: var(--surface); padding: 10px 12px; display: flex; flex-wrap: wrap; gap: 8px; }
+    .alert-body.collapsed { display: none; }
+    .alert-chip {
+      display: flex; align-items: center; gap: 7px;
+      padding: 6px 12px; border-radius: 8px; border: 1px solid;
+      cursor: pointer; transition: opacity .15s; font-size: 0.78rem;
+    }
+    .alert-chip:hover { opacity: 0.8; }
+    .alert-chip-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+    .alert-chip-name { font-weight: 600; max-width: 160px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .alert-chip-client { color: var(--muted); font-size: 0.72rem; }
+    .alert-chip-days { font-weight: 700; margin-left: 4px; white-space: nowrap; }
+
+    /* ── Mobile ── */
+    .mobile-list { padding: 0 14px 60px; }
+    .mobile-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 10px; padding: 14px; margin-bottom: 8px; cursor: pointer;
+      transition: border-color .2s;
+    }
+    .mobile-card:hover { border-color: var(--accent); }
+    .mobile-card.done { opacity: 0.55; }
+    .mobile-card-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+    .mobile-card-name { font-weight: 700; font-size: 0.93rem; line-height: 1.3; }
+    .mobile-card-days { font-size: 0.78rem; font-weight: 700; white-space: nowrap; }
+    .mobile-card-client { color: var(--accent); font-size: 0.75rem; font-weight: 600; margin-top: 3px; }
+    .mobile-card-meta { display: flex; gap: 8px; align-items: center; margin-top: 5px; flex-wrap: wrap; }
+    .mobile-card-dates { font-size: 0.72rem; color: var(--muted); }
+    .mobile-card-desc { display: none; margin-top: 10px; font-size: 0.8rem; color: #94a3b8; line-height: 1.5; border-top: 1px solid var(--border); padding-top: 8px; white-space: pre-wrap; }
+    .mobile-card-desc.open { display: block; }
+    .mobile-card-actions { display: flex; gap: 6px; margin-top: 8px; }
+
+    @media (max-width: 768px) {
+      header { padding: 10px 14px; gap: 10px; }
+      header h1 { font-size: 0.95rem; }
+      .controls .btn { padding: 6px 11px; font-size: 0.78rem; }
+      .sheet-config { padding: 8px 14px; gap: 6px; }
+      .sheet-config input { min-width: 0; font-size: 0.78rem; }
+      .sheet-config label { display: none; }
+      .sheet-config .btn { padding: 6px 10px; font-size: 0.76rem; }
+      .legend { padding: 6px 14px; gap: 6px; }
+      .legend-item { font-size: 0.7rem; }
+      .stats { padding: 8px 14px; gap: 6px; }
+      .stat-card { min-width: 70px; padding: 8px 10px; flex: 1; }
+      .stat-card .val { font-size: 1.15rem; }
+      .filters { padding: 6px 14px; gap: 5px; overflow-x: auto; flex-wrap: nowrap; }
+      .filter-btn { white-space: nowrap; }
+      .alert-panel { margin: 0 14px 4px; }
+      .alert-chip-name { max-width: 90px; }
+      .gantt-wrap { display: none; }
+      .mobile-list { display: block; }
+    }
+    @media (min-width: 769px) {
+      .mobile-list { display: none; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>📅 <span>Projetos</span> · Calendário Visual</h1>
+  <div class="controls">
+    <button class="btn btn-ghost" onclick="loadFromSheet()">⟳ Atualizar</button>
+    <button class="btn btn-primary" onclick="openModal()">+ Novo Projeto</button>
+  </div>
+</header>
+
+<div class="sheet-config">
+  <label>Google Sheet CSV:</label>
+  <input type="text" id="sheetUrl" placeholder="https://docs.google.com/spreadsheets/d/SEU_ID/pub?output=csv" />
+  <button class="btn btn-primary" onclick="loadFromSheet()">Carregar</button>
+  <button class="btn btn-ghost" onclick="useDemoData()">Demo</button>
+</div>
+
+<div class="legend">
+  <span style="font-size:0.75rem;color:var(--muted);margin-right:2px">Urgência:</span>
+  <div class="legend-item"><div class="legend-dot" style="background:#22c55e"></div>&gt;14d</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#84cc16"></div>8–14d</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#eab308"></div>4–7d</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#f97316"></div>2–3d</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#ef4444"></div>≤1d/atrasado</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#6366f1"></div>Concluído</div>
+  <span style="margin-left:auto;font-size:0.72rem;color:var(--muted)">▾ clique na linha para ver descrição</span>
+</div>
+
+<div class="stats" id="stats"></div>
+
+<div class="alert-panel hidden" id="alertPanel">
+  <div class="alert-header" onclick="toggleAlerts()">
+    <div class="alert-header-left">⚠️ Prazos Críticos</div>
+    <div class="alert-header-right" id="alertHeaderRight">▾ recolher</div>
+  </div>
+  <div class="alert-body" id="alertBody"></div>
+</div>
+
+<div class="filters">
+  <button class="filter-btn active" onclick="setFilter('todos',this)">Todos</button>
+  <button class="filter-btn" onclick="setFilter('em andamento',this)">Em andamento</button>
+  <button class="filter-btn" onclick="setFilter('pausado',this)">Pausado</button>
+  <button class="filter-btn" onclick="setFilter('concluído',this)">Concluídos</button>
+  <button class="filter-btn" onclick="setFilter('atrasado',this)">Atrasados</button>
+</div>
+
+<div class="gantt-wrap">
+  <div class="gantt-container" id="gantt">
+    <div class="empty-state"><div class="icon">📋</div><p>Carregando dados da planilha...</p></div>
+  </div>
+</div>
+
+<div class="mobile-list" id="mobileList">
+  <div class="empty-state"><div class="icon">📋</div><p>Carregando...</p></div>
+</div>
+
+<!-- Modal -->
+<div class="modal-overlay" id="modalOverlay" onclick="closeModalOnOverlay(event)">
+  <div class="modal">
+    <h2 id="modalTitle">Novo Projeto</h2>
+    <div class="form-grid">
+      <div class="form-row" style="grid-column:1/-1"><label>Nome da Atividade *</label><input type="text" id="fNome" placeholder="Ex: Instalação Elétrica – Setor A" /></div>
+      <div class="form-row"><label>Cliente</label><input type="text" id="fCliente" placeholder="Ex: João Silva" /></div>
+      <div class="form-row"><label>Responsável</label><input type="text" id="fResponsavel" placeholder="Ex: Jonas" /></div>
+      <div class="form-row"><label>Início *</label><input type="date" id="fInicio" /></div>
+      <div class="form-row"><label>Prazo *</label><input type="date" id="fPrazo" /></div>
+      <div class="form-row"><label>Status</label>
+        <select id="fStatus">
+          <option value="em andamento">Em andamento</option>
+          <option value="pausado">Pausado</option>
+          <option value="concluído">Concluído</option>
+          <option value="excluir">🗑️ Excluir atividade</option>
+        </select>
+      </div>
+      <div class="form-row">
+        <label>Progresso: <span id="progressVal">0</span>%</label>
+        <input type="range" id="fProgresso" min="0" max="100" value="0" oninput="document.getElementById('progressVal').textContent=this.value" />
+      </div>
+      <div class="form-row" style="grid-column:1/-1">
+        <label>Descrição da Atividade</label>
+        <textarea id="fDesc" placeholder="Descreva o escopo, etapas, observações importantes sobre esta atividade..."></textarea>
+      </div>
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="saveProject()">Salvar</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+let projects = [];
+let filterStatus = 'todos';
+let editingIndex = null;
+const today = new Date(); today.setHours(0,0,0,0);
+
+function persist() { try { localStorage.setItem('gantt_p', JSON.stringify(projects)); } catch(e){} }
+function loadPersisted() { try { const d=localStorage.getItem('gantt_p'); if(d) projects=JSON.parse(d); } catch(e){} }
+
+// ── Colors ──────────────────────────────────────────────────────────────────
+function urgencyColor(dl, status) {
+  if (status==='concluído') return '#6366f1';
+  if (dl<=1)  return '#ef4444';
+  if (dl<=3)  return '#f97316';
+  if (dl<=7)  return '#eab308';
+  if (dl<=14) return '#84cc16';
+  return '#22c55e';
+}
+function statusBadge(status) {
+  const m={'em andamento':['#3b82f6','#1e3a5f'],'pausado':['#f59e0b','#3d2e05'],'concluído':['#22c55e','#052e16'],'atrasado':['#ef4444','#3f0000']};
+  const [fg,bg]=m[status]||['#94a3b8','#1e293b'];
+  return `<span class="status-badge" style="color:${fg};background:${bg}">${status}</span>`;
+}
+
+// ── Dates ────────────────────────────────────────────────────────────────────
+function parseDate(s) {
+  if (!s) return null;
+  if (s.includes('/')) { const [d,m,y]=s.split('/'); return new Date(`${y}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`); }
+  return new Date(s+'T00:00:00');
+}
+function daysLeft(s) { const d=parseDate(s); return d?Math.ceil((d-today)/86400000):null; }
+function fmtDate(s) { const d=parseDate(s); return d?d.toLocaleDateString('pt-BR',{day:'2-digit',month:'short'}): ''; }
+function startOfWeek(d) { const r=new Date(d); r.setDate(r.getDate()-r.getDay()); return r; }
+function addDays(d,n) { const r=new Date(d); r.setDate(r.getDate()+n); return r; }
+function isSameWeek(a,b) { const sa=startOfWeek(a), sb=startOfWeek(b); return sa.toDateString()===sb.toDateString(); }
+
+// ── Gantt ────────────────────────────────────────────────────────────────────
+function buildGantt(fp) {
+  if (!fp.length) {
+    document.getElementById('gantt').innerHTML='<div class="empty-state"><div class="icon">🔍</div><p>Nenhum projeto com esse filtro.</p></div>';
+    return;
+  }
+
+  // Range
+  let minD=addDays(today,-7), maxD=addDays(today,28);
+  fp.forEach(p => {
+    const s=parseDate(p.inicio), e=parseDate(p.prazo);
+    if (s&&s<minD) minD=s; if (e&&e>maxD) maxD=e;
+  });
+  // Snap to week boundaries
+  minD=startOfWeek(addDays(minD,-3));
+  maxD=addDays(startOfWeek(addDays(maxD,7)),6);
+
+  const totalMs=maxD-minD;
+  function pct(d){return Math.max(0,Math.min(100,((d-minD)/totalMs)*100));}
+
+  // Build weeks array
+  const weeks=[];
+  let wCur=new Date(minD);
+  while(wCur<=maxD) {
+    weeks.push(new Date(wCur));
+    wCur=addDays(wCur,7);
+  }
+  const totalWeeks=weeks.length;
+
+  // Build months (for super-header)
+  const months=[];
+  let mCur=new Date(minD); mCur.setDate(1);
+  while(mCur<=maxD) {
+    const mStart=Math.max(mCur,minD);
+    const mNext=new Date(mCur.getFullYear(),mCur.getMonth()+1,1);
+    const mEnd=Math.min(mNext,maxD);
+    months.push({label:mCur.toLocaleDateString('pt-BR',{month:'long',year:'numeric'}),pct:((mEnd-mStart)/totalMs)*100});
+    mCur=mNext;
+  }
+
+  const infoW=230, rightW=54;
+  const todayPct=pct(today);
+
+  // Month super-header
+  const mHeader=months.map(m=>`<div class="month-cell" style="width:${m.pct}%">${m.label}</div>`).join('');
+
+  // Week sub-header
+  const wHeader=weeks.map(w=>{
+    const isCur=isSameWeek(w,today);
+    const label=w.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'});
+    const wpct=(7*24*3600*1000/totalMs)*100;
+    return `<div class="week-cell${isCur?' current-week':''}" style="width:${wpct}%">${label}</div>`;
+  }).join('');
+
+  // Rows
+  const rows=fp.map((p,i)=>{
+    const s=parseDate(p.inicio)||today, e=parseDate(p.prazo)||today;
+    const dl=daysLeft(p.prazo);
+    const effStatus=(dl!==null&&dl<0&&p.status!=='concluído')?'atrasado':p.status;
+    const color=urgencyColor(dl??999,p.status);
+    const sp=pct(s), ep=pct(e), wp=Math.max(ep-sp,0.3);
+    const prog=parseInt(p.progresso)||0;
+    const dlLabel=dl===null?'': p.status==='concluído'?'✓': dl<0?`${Math.abs(dl)}d atr.`: dl===0?'hoje!':`${dl}d`;
+    const dlColor=dl===null?'': p.status==='concluído'?'#6366f1': dl<0?'#ef4444': dl<=3?'#f97316': dl<=7?'#eab308':'#64748b';
+    const hasDesc=p.descricao&&p.descricao.trim();
+
+    return `
+<div class="project-row${p.status==='concluído'?' done':''}" id="row-${i}">
+  <div class="project-row-header" style="grid-template-columns:${infoW}px 1fr ${rightW}px" onclick="toggleDesc(${i})">
+    <div class="col-info">
+      <div class="proj-name" title="${p.nome}">${p.nome}</div>
+      ${p.cliente?`<div class="proj-client">👤 ${p.cliente}</div>`:''}
+      <div class="proj-meta">
+        ${statusBadge(effStatus)}
+        ${p.responsavel?`<span style="color:var(--muted)">@${p.responsavel}</span>`:''}
+      </div>
+      <div class="progress-wrap">
+        <div class="progress-track"><div class="progress-fill" style="width:${prog}%"></div></div>
+        <span class="progress-pct">${prog}%</span>
+      </div>
+    </div>
+    <div class="col-bar">
+      <div class="bar-track">
+        <div class="today-line" style="left:${todayPct}%"></div>
+        <div class="bar-fill" style="left:${sp}%;width:${wp}%;background:${color}">
+          <span class="bar-label">${fmtDate(p.inicio)} → ${fmtDate(p.prazo)}</span>
+        </div>
+      </div>
+    </div>
+    <div class="days-col">
+      <span class="days-val" style="color:${dlColor}">${dlLabel}</span>
+      ${hasDesc?`<span class="expand-icon" id="icon-${i}" style="margin-left:6px">▾</span>`:'<span style="width:20px;display:inline-block"></span>'}
+    </div>
+  </div>
+  ${hasDesc?`
+  <div class="desc-panel" id="desc-${i}">
+    <div class="desc-label">📋 Descrição da Atividade</div>
+    <div style="white-space:pre-wrap">${p.descricao}</div>
+    <div class="desc-actions">
+      <button class="btn btn-ghost" style="font-size:0.75rem;padding:4px 10px" onclick="event.stopPropagation();openModal(${i})">✏️ Editar</button>
+    </div>
+  </div>`:''}
+</div>`;
+  }).join('');
+
+  document.getElementById('gantt').innerHTML=`
+    <div class="month-header-row" style="display:grid;grid-template-columns:${infoW}px 1fr ${rightW}px;margin-bottom:0">
+      <div style="background:var(--surface);border-radius:6px 0 0 0;padding:4px 6px;font-size:0.68rem;color:var(--muted)">Atividade</div>
+      <div class="month-cells" style="display:flex">${mHeader}</div>
+      <div style="background:var(--surface)"></div>
+    </div>
+    <div class="week-header-row" style="display:grid;grid-template-columns:${infoW}px 1fr ${rightW}px;margin-bottom:8px">
+      <div></div>
+      <div class="week-cells" style="display:flex">${wHeader}</div>
+      <div style="font-size:0.65rem;color:var(--muted);text-align:center;padding-top:3px">dias</div>
+    </div>
+    ${rows}`;
+}
+
+// ── Mobile Card List ─────────────────────────────────────────────────────────
+function renderMobileList(fp) {
+  const el = document.getElementById('mobileList');
+  if (!el) return;
+  if (!fp.length) {
+    el.innerHTML='<div class="empty-state"><div class="icon">📋</div><p>Nenhuma atividade encontrada.</p></div>';
+    return;
+  }
+  el.innerHTML = fp.map((p,fi)=>{
+    const i = projects.indexOf(p);
+    const dl = daysLeft(p.prazo);
+    const color = urgencyColor(dl??999, p.status);
+    const dlLabel = p.status==='concluído'?'✓ concluído': dl===null?'': dl<0?`${Math.abs(dl)}d atrasado`: dl===0?'vence hoje': `${dl}d restantes`;
+    const hasDesc = p.descricao&&p.descricao.trim();
+    return `<div class="mobile-card${p.status==='concluído'?' done':''}" id="mob-row-${i}" onclick="toggleMobDesc(${i})">
+      <div class="mobile-card-top">
+        <div>
+          <div class="mobile-card-name">${p.nome}</div>
+          ${p.cliente?`<div class="mobile-card-client">👤 ${p.cliente}</div>`:''}
+        </div>
+        <div class="mobile-card-days" style="color:${color}">${dlLabel}</div>
+      </div>
+      <div class="mobile-card-meta">
+        <span class="status-badge" style="background:${color}22;color:${color}">${p.status}</span>
+        <span class="mobile-card-dates">📅 ${p.inicio||'?'} → ${p.prazo||'?'}</span>
+        ${p.responsavel?`<span style="color:var(--muted);font-size:0.72rem">@${p.responsavel}</span>`:''}
+      </div>
+      <div class="progress-wrap" style="margin-top:8px">
+        <div class="progress-track"><div class="progress-fill" style="width:${parseInt(p.progresso)||0}%;background:${color}"></div></div>
+        <span class="progress-pct">${parseInt(p.progresso)||0}%</span>
+      </div>
+      ${hasDesc?`<div class="mobile-card-desc" id="mob-desc-${i}">${p.descricao}</div>`:''}
+      <div class="mobile-card-actions">
+        <button class="btn btn-ghost" style="font-size:0.72rem;padding:4px 10px;margin-top:6px" onclick="event.stopPropagation();openModal(${i})">✏️ Editar</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+function toggleMobDesc(i) {
+  const d = document.getElementById(`mob-desc-${i}`);
+  if (d) d.classList.toggle('open');
+}
+
+function toggleDesc(i) {
+  const panel=document.getElementById(`desc-${i}`);
+  const icon=document.getElementById(`icon-${i}`);
+  if (!panel) { openModal(i); return; }
+  panel.classList.toggle('open');
+  if (icon) icon.classList.toggle('open');
+}
+
+// ── Stats ────────────────────────────────────────────────────────────────────
+function renderStats() {
+  const total=projects.length;
+  const ativos=projects.filter(p=>p.status==='em andamento').length;
+  const atrasados=projects.filter(p=>{const dl=daysLeft(p.prazo);return dl!==null&&dl<0&&p.status!=='concluído';}).length;
+  const concluidos=projects.filter(p=>p.status==='concluído').length;
+  const urgentes=projects.filter(p=>{const dl=daysLeft(p.prazo);return dl!==null&&dl>=0&&dl<=3&&p.status!=='concluído';}).length;
+  document.getElementById('stats').innerHTML=`
+    <div class="stat-card"><div class="val">${total}</div><div class="lbl">Total</div></div>
+    <div class="stat-card"><div class="val" style="color:#3b82f6">${ativos}</div><div class="lbl">Em andamento</div></div>
+    <div class="stat-card"><div class="val" style="color:#f97316">${urgentes}</div><div class="lbl">Urgentes (≤3d)</div></div>
+    <div class="stat-card"><div class="val" style="color:#ef4444">${atrasados}</div><div class="lbl">Atrasados</div></div>
+    <div class="stat-card"><div class="val" style="color:#22c55e">${concluidos}</div><div class="lbl">Concluídos</div></div>`;
+}
+
+// ── Alerts ───────────────────────────────────────────────────────────────────
+let alertsCollapsed = false;
+function toggleAlerts() {
+  alertsCollapsed = !alertsCollapsed;
+  document.getElementById('alertBody').classList.toggle('collapsed', alertsCollapsed);
+  document.getElementById('alertHeaderRight').textContent = alertsCollapsed ? '▸ expandir' : '▾ recolher';
+}
+
+function renderAlerts() {
+  const panel = document.getElementById('alertPanel');
+  const body  = document.getElementById('alertBody');
+  // Urgentes = não concluído, prazo ≤ 7 dias (inclui atrasados)
+  const urgent = projects
+    .filter(p => p.status !== 'concluído')
+    .map(p => ({ ...p, dl: daysLeft(p.prazo) }))
+    .filter(p => p.dl !== null && p.dl <= 7)
+    .sort((a, b) => a.dl - b.dl);
+
+  if (!urgent.length) { panel.classList.add('hidden'); return; }
+  panel.classList.remove('hidden');
+
+  body.innerHTML = urgent.map(p => {
+    const color = urgencyColor(p.dl, p.status);
+    const border = color + '55';
+    const daysLabel = p.dl < 0
+      ? `${Math.abs(p.dl)}d atrasado`
+      : p.dl === 0 ? 'vence hoje!'
+      : `${p.dl}d restantes`;
+    const idx = projects.indexOf(projects.find(x => x.nome === p.nome && x.prazo === p.prazo));
+    return `
+      <div class="alert-chip" style="background:${color}18;border-color:${border};color:${color}"
+           onclick="scrollToProject(${idx})">
+        <div class="alert-chip-dot" style="background:${color}"></div>
+        <div>
+          <div class="alert-chip-name" title="${p.nome}">${p.nome}</div>
+          ${p.cliente ? `<div class="alert-chip-client">👤 ${p.cliente}</div>` : ''}
+        </div>
+        <div class="alert-chip-days">${daysLabel}</div>
+      </div>`;
+  }).join('');
+}
+
+function scrollToProject(i) {
+  const el = document.getElementById(`row-${i}`);
+  if (!el) return;
+  el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  el.style.outline = '2px solid #f97316';
+  setTimeout(() => el.style.outline = '', 1800);
+  // Also open description if exists
+  const desc = document.getElementById(`desc-${i}`);
+  if (desc && !desc.classList.contains('open')) toggleDesc(i);
+}
+
+function setFilter(s,btn){
+  filterStatus=s;
+  document.querySelectorAll('.filter-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active'); render();
+}
+
+function render() {
+  renderStats();
+  renderAlerts();
+  let filtered=projects;
+  if (filterStatus==='atrasado') filtered=projects.filter(p=>{const dl=daysLeft(p.prazo);return dl!==null&&dl<0&&p.status!=='concluído';});
+  else if (filterStatus!=='todos') filtered=projects.filter(p=>p.status===filterStatus);
+  buildGantt(filtered);
+  renderMobileList(filtered);
+}
+
+// ── Merge sheet + local-only projects ────────────────────────────────────────
+function mergeWithSheet(parsed) {
+  // Projetos locais que NÃO estão na planilha (criados via + Novo Projeto)
+  const sheetNames = parsed.map(p => p.nome.trim().toLowerCase());
+  const localOnly  = projects.filter(p => p._local && !sheetNames.includes(p.nome.trim().toLowerCase()));
+  return [...parsed, ...localOnly];
+}
+
+// ── Load from Sheet ───────────────────────────────────────────────────────────
+async function loadFromSheet() {
+  const url=document.getElementById('sheetUrl').value.trim();
+  if (!url){showToast('Cole a URL do Google Sheet primeiro',true);return;}
+  const backup=[...projects];
+  document.getElementById('gantt').innerHTML='<div class="loading">⏳ Carregando planilha...</div>';
+  document.getElementById('mobileList').innerHTML='<div class="loading">⏳ Carregando...</div>';
+  try {
+    const res=await fetch(url);
+    if (!res.ok) throw new Error('Erro HTTP '+res.status);
+    const csv=await res.text();
+    if (!csv||csv.trim().startsWith('<')) throw new Error('A planilha não retornou CSV. Verifique se está publicada corretamente em Arquivo → Compartilhar → Publicar na Web → CSV.');
+    const parsed=parseCSV(csv);
+    if (parsed.length===0) throw new Error('Planilha vazia ou sem dados reconhecidos.');
+    projects=mergeWithSheet(parsed); _lastCsv=csv; persist(); render();
+    const local=projects.filter(p=>p._local).length;
+    showToast('✅ '+projects.length+' atividades'+(local>0?' ('+local+' só locais)':''));
+  } catch(e){
+    projects=backup; render();
+    showToast('Erro: '+e.message,true);
+  }
+}
+
+function parseCSV(csv) {
+  const lines=csv.trim().split('\n'); if(lines.length<2) return [];
+  const headers=lines[0].split(',').map(h=>h.trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/\s+/g,'_'));
+  return lines.slice(1).map(line=>{
+    // Handle quoted fields with commas
+    const vals=[]; let cur='', inQ=false;
+    for(const c of line){if(c==='"'){inQ=!inQ;}else if(c===','&&!inQ){vals.push(cur.trim());cur='';}else{cur+=c;}}
+    vals.push(cur.trim());
+    const o={}; headers.forEach((h,i)=>o[h]=(vals[i]||'').replace(/^"|"$/g,''));
+    return {
+      nome:o.nome||o.atividade||o.projeto||o.name||'',
+      cliente:o.cliente||o.client||'',
+      responsavel:o.responsavel||o.responsible||'',
+      inicio:o.inicio||o.start||o.data_inicio||'',
+      prazo:o.prazo||o.deadline||o.fim||o.data_prazo||'',
+      status:(o.status||'em andamento').toLowerCase(),
+      progresso:o.progresso||o.progress||'0',
+      descricao:o.descricao||o.descricao||o.description||o.obs||o.observacao||'',
+    };
+  }).filter(p=>p.nome);
+}
+
+// ── Demo ──────────────────────────────────────────────────────────────────────
+function useDemoData(){
+  function add(n){const d=new Date(today);d.setDate(d.getDate()+n);return d.toISOString().slice(0,10);}
+  // _demo:true → esses projetos são puramente locais e nunca voltam pelo Carregar/autoRefresh
+  projects=[
+    {_demo:true,nome:'Instalação Elétrica – Setor A',cliente:'Carlos Mota',responsavel:'Jonas',inicio:add(-10),prazo:add(2),status:'em andamento',progresso:'75',descricao:'Instalação de tomadas, disjuntores e quadro de distribuição no setor A do galpão. Inclui passagem de eletrodutos e identificação de circuitos conforme projeto.'},
+    {_demo:true,nome:'Instalação Elétrica – Setor B',cliente:'Carlos Mota',responsavel:'Jonas',inicio:add(-3),prazo:add(12),status:'em andamento',progresso:'20',descricao:'Segunda etapa da instalação no cliente Carlos Mota. Setor B: iluminação de emergência, tomadas industriais 3F e aterramento.'},
+    {_demo:true,nome:'Painel de Comando CLP',cliente:'Metalsul Ltda',responsavel:'Jonas',inicio:add(-5),prazo:add(15),status:'em andamento',progresso:'30',descricao:'Montagem de painel com CLP Siemens S7-1200. Programação de intertravamentos e alarmes. Comissionamento previsto para semana 3.'},
+    {_demo:true,nome:'Projeto Fotovoltaico 15kWp',cliente:'Supermercado Bom Preço',responsavel:'Jonas',inicio:add(-20),prazo:add(-3),status:'em andamento',progresso:'60',descricao:'Sistema fotovoltaico 15kWp, 36 módulos de 420W. Inversores Fronius 12kW. Aguardando aprovação da concessionária para conexão.'},
+    {_demo:true,nome:'Adequação NBR 5410 – Galpão',cliente:'Translog SA',responsavel:'Jonas',inicio:add(-30),prazo:add(-15),status:'concluído',progresso:'100',descricao:'Adequação completa da instalação elétrica ao padrão NBR 5410. Laudo emitido e entregue ao cliente.'},
+    {_demo:true,nome:'Dimensionamento Subestação 300kVA',cliente:'Condomínio Parque Verde',responsavel:'Jonas',inicio:add(2),prazo:add(20),status:'em andamento',progresso:'10',descricao:'Projeto e dimensionamento de subestação transformadora 300kVA. Inclui SPDA, CFTV e infraestrutura de dados.'},
+    {_demo:true,nome:'Revisão Quadro Geral BT',cliente:'Fábrica Têxtil Norte',responsavel:'Jonas',inicio:add(-1),prazo:add(0),status:'em andamento',progresso:'80',descricao:'Revisão e substituição de disjuntores no QG-BT. Medição de isolamento e termografia já realizadas. Pendente: troca do relé de falta à terra.'},
+  ];
+  persist(); render(); showToast('Dados de demonstração carregados!');
+}
+
+// ── Modal ─────────────────────────────────────────────────────────────────────
+function openModal(idx) {
+  editingIndex=(idx!==undefined)?idx:null;
+  const p=editingIndex!==null?projects[editingIndex]:null;
+  document.getElementById('modalTitle').textContent=p?'Editar Atividade':'Nova Atividade';
+  document.getElementById('fNome').value=p?.nome||'';
+  document.getElementById('fCliente').value=p?.cliente||'';
+  document.getElementById('fResponsavel').value=p?.responsavel||'';
+  document.getElementById('fInicio').value=p?.inicio||today.toISOString().slice(0,10);
+  document.getElementById('fPrazo').value=p?.prazo||'';
+  document.getElementById('fStatus').value=p?.status||'em andamento';
+  document.getElementById('fProgresso').value=p?.progresso||'0';
+  document.getElementById('progressVal').textContent=p?.progresso||'0';
+  document.getElementById('fDesc').value=p?.descricao||'';
+  document.getElementById('modalOverlay').classList.add('open');
+}
+function closeModal(){document.getElementById('modalOverlay').classList.remove('open');editingIndex=null;}
+function closeModalOnOverlay(e){if(e.target===document.getElementById('modalOverlay'))closeModal();}
+
+function saveProject(){
+  const nome=document.getElementById('fNome').value.trim();
+  if(!nome){showToast('Nome é obrigatório',true);return;}
+  const p={
+    nome, cliente:document.getElementById('fCliente').value.trim(),
+    responsavel:document.getElementById('fResponsavel').value.trim(),
+    inicio:document.getElementById('fInicio').value, prazo:document.getElementById('fPrazo').value,
+    status:document.getElementById('fStatus').value, progresso:document.getElementById('fProgresso').value,
+    descricao:document.getElementById('fDesc').value.trim(),
+  };
+  if(p.status==='excluir'){
+    if(editingIndex!==null){ projects.splice(editingIndex,1); persist(); render(); closeModal(); showToast('🗑️ Atividade excluída'); }
+    else { showToast('Selecione uma atividade para excluir',true); }
+    return;
+  }
+  if(editingIndex!==null){ projects[editingIndex]=p; } else { p._local=true; projects.push(p); }
+  persist(); render(); closeModal();
+  showToast(editingIndex!==null?'Atividade atualizada':'Atividade adicionada');
+}
+
+// ── Toast ─────────────────────────────────────────────────────────────────────
+function showToast(msg,error=false){
+  const t=document.getElementById('toast');
+  t.textContent=msg; t.className='toast'+(error?' error':'');
+  t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),3000);
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+// URL padrão: agora lê por padrão a planilha CSV no Drive da máquina (caminho relativo)
+const DEFAULT_CSV='./agenda_projetos.csv';
+try{
+  let u=localStorage.getItem('gantt_url');
+  if(!u || u.includes('docs.google.com/spreadsheets')){
+    u=DEFAULT_CSV;
+    localStorage.setItem('gantt_url', u);
+  }
+  document.getElementById('sheetUrl').value=u;
+}catch(e){
+  document.getElementById('sheetUrl').value=DEFAULT_CSV;
+}
+document.getElementById('sheetUrl').addEventListener('change',e=>{try{localStorage.setItem('gantt_url',e.target.value);}catch(e){}});
+loadPersisted();
+// Seed: injeta projetos reais se localStorage estiver vazio
+const _SEED=[
+  {_local:true,nome:'BR CARAT PROJETO',cliente:'BR CARAT',responsavel:'JONAS, LONGUINI',inicio:'2026-06-01',prazo:'2026-06-15',status:'em andamento',progresso:83,descricao:''},
+  {_local:true,nome:'BR CARAT OBRA REFORMA',cliente:'BR CARAT',responsavel:'JONAS, LONGUINI',inicio:'2026-06-15',prazo:'2026-07-31',status:'em andamento',progresso:0,descricao:''},
+  {_local:true,nome:'VIP REFORMA REESTRUTURAÇÃO',cliente:'VIP',responsavel:'JONAS, LONGUINI',inicio:'2026-06-15',prazo:'2026-07-15',status:'em andamento',progresso:0,descricao:''},
+  {_local:true,nome:'5.8 INTERNET SALA MARKETING',cliente:'MARKETING',responsavel:'JONAS, LONGUINI',inicio:'2026-06-15',prazo:'2026-07-15',status:'em andamento',progresso:0,descricao:''},
+  {_local:true,nome:'MEGACAR DOCUMENTAÇÃO',cliente:'MEGA CAR',responsavel:'JONAS',inicio:'2026-06-01',prazo:'2026-06-20',status:'em andamento',progresso:95,descricao:''},
+  {_local:true,nome:'MEGACAR IMPLEMENTAÇÃO',cliente:'MEGA CAR',responsavel:'JONAS, SANTANA, RAFAEL',inicio:'2026-06-20',prazo:'2026-07-11',status:'em andamento',progresso:0,descricao:''},
+  {_local:true,nome:'MEGACAR AJUSTES E ATUALIZAÇÕES',cliente:'MEGA CAR',responsavel:'JONAS',inicio:'2026-06-10',prazo:'2026-07-31',status:'em andamento',progresso:0,descricao:''},
+  {_local:true,nome:'DIGITAL BONUS PROGRAMA APLICATIVO',cliente:'GRUPO SANTANA',responsavel:'JONAS, COLLETO',inicio:'2026-06-01',prazo:'2026-06-30',status:'em andamento',progresso:92,descricao:''},
+  {_local:true,nome:'DIGITAL BONUS IMPLANTAÇÃO',cliente:'GRUPO SANTANA',responsavel:'JONAS, COLLETO, MARKETING',inicio:'2026-07-01',prazo:'2026-07-18',status:'em andamento',progresso:0,descricao:''},
+  {_local:true,nome:'DIGITAL BONUS FASE FINAL',cliente:'GRUPO SANTANA',responsavel:'JONAS, COLLETO, MARKETING',inicio:'2026-07-15',prazo:'2026-07-31',status:'em andamento',progresso:0,descricao:''},
+  {_local:true,nome:'MARKETING SITES',cliente:'MARKETING',responsavel:'JONAS, COLLETO, MARKETING',inicio:'2026-06-01',prazo:'2026-06-25',status:'em andamento',progresso:54,descricao:''},
+  {_local:true,nome:'CARTAO VISITA DIGITAL',cliente:'GRUPO SANTANA',responsavel:'JONAS, LUIS, SANTANA',inicio:'2026-06-01',prazo:'2026-06-15',status:'concluído',progresso:100,descricao:''},
+  {_local:true,nome:'CARTÃO DE VISITA DIGITAL',cliente:'GRUPO SANTANA',responsavel:'JONAS, CRIAR EMPRESA',inicio:'2026-06-15',prazo:'2026-07-02',status:'em andamento',progresso:0,descricao:''},
+  {_local:true,nome:'CHARLESCONTRA PROPOSTA',cliente:'SANTANA',responsavel:'JONAS, SANTANA',inicio:'2026-06-08',prazo:'2026-06-19',status:'em andamento',progresso:49,descricao:''},
+  {_local:true,nome:'DESLIGAMENTO TORRES',cliente:'5.8 E VIP',responsavel:'JONAS, ELAINE',inicio:'2026-06-15',prazo:'2026-07-31',status:'em andamento',progresso:41,descricao:''},
+];
+if(projects.length===0){projects=_SEED;persist();}
+if(projects.length>0) render();
+// Auto-refresh a cada 30s
+let _lastCsv = '';
+async function autoRefresh() {
+  const url = document.getElementById('sheetUrl').value.trim();
+  if (!url) return;
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return;
+    const csv = await res.text();
+    if (!csv || csv.trim().startsWith('<') || csv === _lastCsv) return;
+    const parsed = parseCSV(csv);
+    if (parsed.length === 0) return; // nunca apaga dados com resultado vazio
+    _lastCsv = csv;
+    projects = mergeWithSheet(parsed);
+    persist();
+    render();
+  } catch(e) { /* silencioso — mantém dados atuais */ }
+}
+// Inicia: carrega da sheet imediatamente, depois a cada 30s
+autoRefresh();
+setInterval(autoRefresh, 30000);
+</script>
+</body>
+</html>
