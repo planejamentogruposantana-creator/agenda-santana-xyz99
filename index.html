@@ -58,6 +58,8 @@
     .filter-btn { padding: 4px 13px; border-radius: 20px; border: 1px solid var(--border); background: transparent; color: var(--muted); font-size: 0.78rem; cursor: pointer; transition: all .15s; }
     .filter-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
     .filter-btn:hover:not(.active) { border-color: var(--accent); color: var(--text); }
+    .sort-select { padding: 4px 10px; border-radius: 20px; border: 1px solid var(--border); background: var(--surface); color: var(--muted); font-size: 0.78rem; cursor: pointer; outline: none; margin-left: auto; transition: all .15s; }
+    .sort-select:hover { border-color: var(--accent); color: var(--text); }
 
     /* ── Gantt ── */
     .gantt-wrap { padding: 0 28px 40px; overflow-x: auto; }
@@ -233,6 +235,7 @@
       .stat-card { min-width: 70px; padding: 8px 10px; flex: 1; }
       .stat-card .val { font-size: 1.15rem; }
       .filters { padding: 6px 14px; gap: 5px; overflow-x: auto; flex-wrap: nowrap; }
+      .sort-select { margin-left: 0; flex-shrink: 0; }
       .filter-btn { white-space: nowrap; }
       .alert-panel { margin: 0 14px 4px; }
       .alert-chip-name { max-width: 90px; }
@@ -282,12 +285,20 @@
   <div class="alert-body" id="alertBody"></div>
 </div>
 
-<div class="filters">
+<div class="filters" style="align-items: center;">
   <button class="filter-btn active" onclick="setFilter('todos',this)">Todos</button>
   <button class="filter-btn" onclick="setFilter('em andamento',this)">Em andamento</button>
   <button class="filter-btn" onclick="setFilter('pausado',this)">Pausado</button>
   <button class="filter-btn" onclick="setFilter('concluído',this)">Concluídos</button>
   <button class="filter-btn" onclick="setFilter('atrasado',this)">Atrasados</button>
+  
+  <select id="sortSelect" onchange="setSort(this.value)" class="sort-select">
+    <option value="padrao">⇅ Padrão (Cadastro)</option>
+    <option value="prazoAsc">📅 Vencimento (Mais Próximo)</option>
+    <option value="prazoDesc">📅 Vencimento (Mais Distante)</option>
+    <option value="inicioAsc">🕒 Início (Mais Antigo)</option>
+    <option value="inicioDesc">🕒 Início (Mais Recente)</option>
+  </select>
 </div>
 
 <div class="gantt-wrap">
@@ -339,6 +350,7 @@
 <script>
 let projects = [];
 let filterStatus = 'todos';
+let sortBy = 'padrao';
 let editingIndex = null;
 const today = new Date(); today.setHours(0,0,0,0);
 
@@ -615,13 +627,52 @@ function setFilter(s,btn){
   document.querySelectorAll('.filter-btn').forEach(b=>b.classList.remove('active'));
   btn.classList.add('active'); render();
 }
+function setSort(val){
+  sortBy=val;
+  render();
+}
 
 function render() {
   renderStats();
   renderAlerts();
-  let filtered=projects;
-  if (filterStatus==='atrasado') filtered=projects.filter(p=>{const dl=daysLeft(p.prazo);return dl!==null&&dl<0&&p.status!=='concluído';});
-  else if (filterStatus!=='todos') filtered=projects.filter(p=>p.status===filterStatus);
+  let filtered=[...projects];
+  if (filterStatus==='atrasado') filtered=filtered.filter(p=>{const dl=daysLeft(p.prazo);return dl!==null&&dl<0&&p.status!=='concluído';});
+  else if (filterStatus!=='todos') filtered=filtered.filter(p=>p.status===filterStatus);
+  
+  if (sortBy === 'prazoAsc') {
+    filtered.sort((a, b) => {
+      const dlA = daysLeft(a.prazo);
+      const dlB = daysLeft(b.prazo);
+      if (dlA === null) return 1;
+      if (dlB === null) return -1;
+      return dlA - dlB;
+    });
+  } else if (sortBy === 'prazoDesc') {
+    filtered.sort((a, b) => {
+      const dlA = daysLeft(a.prazo);
+      const dlB = daysLeft(b.prazo);
+      if (dlA === null) return 1;
+      if (dlB === null) return -1;
+      return dlB - dlA;
+    });
+  } else if (sortBy === 'inicioAsc') {
+    filtered.sort((a, b) => {
+      const dA = parseDate(a.inicio);
+      const dB = parseDate(b.inicio);
+      if (!dA) return 1;
+      if (!dB) return -1;
+      return dA - dB;
+    });
+  } else if (sortBy === 'inicioDesc') {
+    filtered.sort((a, b) => {
+      const dA = parseDate(a.inicio);
+      const dB = parseDate(b.inicio);
+      if (!dA) return 1;
+      if (!dB) return -1;
+      return dB - dA;
+    });
+  }
+  
   buildGantt(filtered);
   renderMobileList(filtered);
 }
