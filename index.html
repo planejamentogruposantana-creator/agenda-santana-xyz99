@@ -635,6 +635,24 @@ function mergeWithSheet(parsed) {
 }
 
 // ── Load from Sheet ───────────────────────────────────────────────────────────
+async function fetchFreshestCSV(url) {
+  let token = localStorage.getItem('github_pat');
+  if (token && url === DEFAULT_CSV) {
+    try {
+      const getRes = await fetch(`https://api.github.com/repos/planejamentogruposantana-creator/agenda-santana-xyz99/contents/agenda_projetos.csv?ref=gh-pages`, {
+        headers: { 'Authorization': `Bearer ${token}`, 'Cache-Control': 'no-cache, no-store, must-revalidate' }
+      });
+      if (getRes.ok) {
+        const getJson = await getRes.json();
+        return decodeURIComponent(escape(atob(getJson.content)));
+      }
+    } catch(e) {}
+  }
+  const res = await fetch(url + (url.includes('?') ? '&' : '?') + 'nocache=' + Date.now(), {cache: 'no-store'});
+  if (!res.ok) throw new Error('Erro HTTP '+res.status);
+  return await res.text();
+}
+
 async function loadFromSheet() {
   const url=document.getElementById('sheetUrl').value.trim();
   if (!url){showToast('Cole a URL do Google Sheet primeiro',true);return;}
@@ -642,9 +660,7 @@ async function loadFromSheet() {
   document.getElementById('gantt').innerHTML='<div class="loading">⏳ Carregando planilha...</div>';
   document.getElementById('mobileList').innerHTML='<div class="loading">⏳ Carregando...</div>';
   try {
-    const res=await fetch(url);
-    if (!res.ok) throw new Error('Erro HTTP '+res.status);
-    const csv=await res.text();
+    const csv = await fetchFreshestCSV(url);
     if (!csv||csv.trim().startsWith('<')) throw new Error('A planilha não retornou CSV. Verifique se está publicada corretamente em Arquivo → Compartilhar → Publicar na Web → CSV.');
     const parsed=parseCSV(csv);
     if (parsed.length===0) throw new Error('Planilha vazia ou sem dados reconhecidos.');
@@ -729,6 +745,7 @@ function saveProject(){
     else { showToast('Selecione uma atividade para excluir',true); }
     return;
   }
+  p._local = true; // Flag essencial para sobreviver ao merge Just-in-Time
   if(editingIndex!==null){ projects[editingIndex]=p; } else { projects.push(p); }
   persist(); render(); closeModal();
   showToast(editingIndex!==null?'Atividade atualizada':'Atividade adicionada');
@@ -761,45 +778,86 @@ async function pushToGitHub() {
   const repo = 'agenda-santana-xyz99';
   const path = 'agenda_projetos.csv';
   const branch = 'gh-pages';
-  const csvContent = arrayToCSV(projects);
 
-  try {
-    const getRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/contents/${path}?ref=${branch}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-    });
-    let sha = '';
-    if (getRes.ok) {
-        const getJson = await getRes.json();
-        sha = getJson.sha;
-    }
+  let success = false;
+  let statusStr = "";
+  
+  for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        const getRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/contents/${path}?ref=${branch}`, {
+            headers: { 
+                'Authorization': `Bearer ${token}`,
+                'Cache-Control': 'no-cache, no-store, must-revalidate',
+                'Pragma': 'no-cache'
+            }
+        });
+        
+        let sha = '';
+        if (getRes.ok) {
+            const getJson = await getRes.json();
+            sha = getJson.sha;
+            
+            // 3-Way Merge Otimista (Optimistic Concurrency Control)
+            try {
+                const latestCsv = decodeURIComponent(escape(atob(getJson.content)));
+                if (latestCsv && _lastCsv) {
+                    const latestParsed = parseCSV(latestCsv);
+                    const originalParsed = parseCSV(_lastCsv);
+                    
+                    const originalStrings = originalParsed.map(p => JSON.stringify(p));
+                    const newRows = latestParsed.filter(p => !originalStrings.includes(JSON.stringify(p)));
+                    
+                    if (newRows.length > 0) {
+                        projects = [...projects, ...newRows];
+                        persist(); render();
+                        showToast(`Sincronizado: +${newRows.length} novas tarefas da nuvem.`, false);
+                    }
+                }
+            } catch(e) { console.error("Erro no 3-way merge", e); }
+        }
 
-    const encodedContent = btoa(unescape(encodeURIComponent(csvContent)));
-    const putRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/contents/${path}`, {
-        method: 'PUT',
-        headers: { 
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-            message: "Auto-sync Celular (GitHub API)",
-            content: encodedContent,
-            sha: sha,
-            branch: branch
-        })
-    });
+        const finalCsvContent = arrayToCSV(projects);
+        const encodedContent = btoa(unescape(encodeURIComponent(finalCsvContent)));
+        
+        const putRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/contents/${path}`, {
+            method: 'PUT',
+            headers: { 
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                message: "Auto-sync Celular (GitHub API)",
+                content: encodedContent,
+                sha: sha,
+                branch: branch
+            })
+        });
 
-    if (putRes.ok) {
-        showToast("✅ Salvo na nuvem com sucesso!");
-    } else {
-        if(putRes.status === 401) {
+        if (putRes.ok) {
+            showToast("✅ Salvo na nuvem com sucesso!");
+            success = true;
+            _lastCsv = finalCsvContent; // Atualiza a base para o próximo diff
+            break; // Sai do loop de tentativas
+        } else if (putRes.status === 409) {
+            console.warn("Conflito 409 detectado. Tentativa " + attempt);
+            statusStr = "Erro 409";
+            await new Promise(r => setTimeout(r, 800)); // Aguarda e tenta de novo
+        } else if (putRes.status === 401) {
             localStorage.removeItem('github_pat');
             showToast("Erro: Token Inválido.", true);
+            break;
         } else {
-            showToast("Erro ao salvar no GitHub: " + putRes.status, true);
+            statusStr = "Erro " + putRes.status;
+            break;
         }
-    }
-  } catch(e) {
-    showToast("Erro de conexão com o GitHub.", true);
+      } catch(e) {
+          statusStr = "Erro de conexão";
+          break;
+      }
+  }
+  
+  if (!success && statusStr) {
+      showToast("Falha ao salvar no GitHub: " + statusStr, true);
   }
 }
 
@@ -851,9 +909,7 @@ async function autoRefresh() {
   const url = document.getElementById('sheetUrl').value.trim();
   if (!url) return;
   try {
-    const res = await fetch(url);
-    if (!res.ok) return;
-    const csv = await res.text();
+    const csv = await fetchFreshestCSV(url);
     if (!csv || csv.trim().startsWith('<') || csv === _lastCsv) return;
     const parsed = parseCSV(csv);
     if (parsed.length === 0) return; // nunca apaga dados com resultado vazio
